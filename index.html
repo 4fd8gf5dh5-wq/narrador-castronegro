@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Narrador de Castronegro</title>
+  <meta name="description" content="Narrador automático por voz para Los Hombres Lobo de Castronegro: El Pacto.">
+  <meta name="theme-color" content="#0b0a0c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="mode-day">
+  <header class="topbar" id="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="28" height="28">
+      <span>Narrador de Castronegro</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btn-mute" type="button" aria-label="Silenciar voz" title="Silenciar voz">🔊</button>
+      <button class="icon-btn" id="btn-menu" type="button" aria-label="Menú" title="Menú">☰</button>
+    </div>
+  </header>
+
+  <!-- Todas las pantallas se pintan aquí desde app.js (máquina de estados). -->
+  <main id="app" aria-live="polite"></main>
+
+  <!-- Subtítulo de lo que dice la voz (accesibilidad y respaldo si no hay TTS). -->
+  <div id="caption" class="caption" role="status" aria-live="polite"></div>
+
+  <!-- Menú / ajustes (diálogo nativo). -->
+  <dialog id="menu-dialog" class="sheet">
+    <form method="dialog" class="sheet-body" id="menu-body"></form>
+  </dialog>
+
+  <!-- Diálogo genérico para herramientas de día y confirmaciones. -->
+  <dialog id="modal" class="sheet">
+    <div class="sheet-body" id="modal-body"></div>
+  </dialog>
+
+  <noscript>Esta aplicación necesita JavaScript.</noscript>
+  <script src="eventos.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
