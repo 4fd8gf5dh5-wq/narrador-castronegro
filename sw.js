@@ -1,5 +1,5 @@
 /* Service Worker: cachea el "app shell" para que el narrador funcione sin conexión. */
-const CACHE = 'narrador-pacto-v2';
+const CACHE = 'narrador-pacto-v3';
 const SHELL = [
   './',
   './index.html',

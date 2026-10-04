@@ -648,10 +648,12 @@ function screenDeck() {
  *     Ningún botón se desactiva según lo que eligieron otros, para no
  *     filtrar información; la comprobación de cartas es global al final.
  * =================================================================== */
-function screenReveal(i, stage, chosen = null) {
+function screenReveal(i, stage, chosen = null, mode = 'deal') {
   setMode('day');
   const p = G.players[i];
   if (!p) return finishReveal();
+  // En la ronda de verificación, tras elegir carta se vuelve a ese flujo.
+  const next = () => (mode === 'verify' ? screenVerify(i + 1, 'handoff') : screenReveal(i + 1, 'handoff'));
   if (stage === 'handoff') {
     render(`
       <section class="handoff">
@@ -669,7 +671,7 @@ function screenReveal(i, stage, chosen = null) {
         <h2>${esc(p.name)}, ¿qué carta te ha tocado?</h2>
         <div class="grid">${roles.map((r) => `<button class="btn" data-r="${r}">${roleName(r)}</button>`).join('')}</div>
       </section>`);
-    $$('[data-r]').forEach((b) => { b.onclick = () => screenReveal(i, 'confirm', b.dataset.r); });
+    $$('[data-r]').forEach((b) => { b.onclick = () => screenReveal(i, 'confirm', b.dataset.r, mode); });
   } else if (stage === 'confirm') {
     const r = ROLES[chosen];
     render(`
@@ -682,39 +684,116 @@ function screenReveal(i, stage, chosen = null) {
           <button class="btn primary xl" data-a="ok">Confirmar y ocultar</button>
         </div>
       </section>`);
-    $('[data-a=back]').onclick = () => screenReveal(i, 'pick');
+    $('[data-a=back]').onclick = () => screenReveal(i, 'pick', null, mode);
     $('[data-a=ok]').onclick = () => {
       p.card = p.role = chosen;
       p.lives = chosen === 'anciano' ? 2 : 1;
       save();
-      screenReveal(i + 1, 'handoff');
+      next();
     };
   }
 }
 
-/** Comprueba el reparto y calcula las cartas sobrantes (Ladrón). */
-function finishReveal() {
+/* ---------------------------------------------------------------------
+ * ANTIERRORES DEL REPARTO
+ * La partida NO puede empezar si las cartas marcadas no encajan con el
+ * mazo configurado (p. ej. hay 1 Aldeano y lo han marcado 2 personas).
+ * Para no desvelar nada, nunca se dice qué carta ni quién se equivocó:
+ * se hace una ronda de verificación en la que TODOS repiten el mismo
+ * proceso (ver su carta marcada y confirmarla o corregirla).
+ * ------------------------------------------------------------------- */
+
+/** Cartas marcadas más veces de las que hay en el mazo (o sin marcar). */
+function revealProblems() {
   const used = {};
   G.players.forEach((p) => { used[p.role] = (used[p.role] || 0) + 1; });
-  const over = Object.keys(used).some((r) => used[r] > (G.deck[r] || 0));
+  return Object.keys(used).filter((r) => r === 'null' || !(r in ROLES) || used[r] > (G.deck[r] || 0));
+}
+
+/** Comprueba el reparto; si cuadra, calcula las cartas sobrantes (Ladrón) y pasa a la fase pública. */
+function finishReveal() {
+  if (revealProblems().length) return screenRevealError();
+  G.revealAttempts = 0;
+  const used = {};
+  G.players.forEach((p) => { used[p.role] = (used[p.role] || 0) + 1; });
   G.extraCards = [];
   Object.entries(G.deck).forEach(([r, k]) => { for (let j = 0; j < k - (used[r] || 0); j++) G.extraCards.push(r); });
-  if (over) {
+  screenPublic();
+}
+
+/** Pantalla de bloqueo: el reparto no cuadra y no se puede empezar. */
+function screenRevealError() {
+  setMode('day');
+  G.revealAttempts = (G.revealAttempts || 0) + 1;
+  save();
+  const deckList = Object.entries(G.deck).filter(([, k]) => k > 0)
+    .map(([r, k]) => `<li>${k} × ${roleName(r)}</li>`).join('');
+  const insistent = G.revealAttempts >= 3;
+  render(`
+    <section class="stack">
+      <div class="card center">
+        <h2>⛔ El reparto no cuadra</h2>
+        <p>Alguien ha marcado una carta que no le corresponde: hay más jugadores con un personaje
+        que copias de ese personaje en el mazo. <b>La partida no puede empezar así.</b></p>
+        <p class="small muted">Para no desvelar nada, la app no dice qué carta ni quién se ha equivocado.</p>
+      </div>
+      ${insistent ? `<div class="card"><b>Ya van ${G.revealAttempts - 1} comprobaciones sin éxito.</b>
+        Lo más probable es que las cartas repartidas en la mesa no sean las del mazo configurado.
+        Recoged las cartas y comparadlas con la lista de abajo.</div>` : ''}
+      <div class="card">
+        <h3>Mazo configurado (público)</h3>
+        <p class="small muted">Comprobad que estas son exactamente las cartas que se han repartido${G.deck.ladron ? ' (incluidas las 2 sobrantes del Ladrón, boca abajo en el centro)' : ''}.</p>
+        <ul>${deckList}</ul>
+      </div>
+      <button class="btn primary xl block" data-a="verify">🔍 Ronda de verificación (recomendado)</button>
+      <p class="small muted center">Todos, uno por uno, ven en privado la carta que marcaron y la confirman o la corrigen.</p>
+      <div class="row">
+        <button class="btn grow" data-a="redo">Repetir todo el reparto</button>
+        <button class="btn grow" data-a="deck">El mazo está mal: volver a configurarlo</button>
+      </div>
+    </section>`);
+  $('[data-a=verify]').onclick = () => screenVerify(0, 'handoff');
+  $('[data-a=redo]').onclick = () => {
+    G.players.forEach((p) => { p.card = p.role = null; });
+    screenReveal(0, 'handoff');
+  };
+  $('[data-a=deck]').onclick = () => {
+    if (!confirm('Se descartará el reparto y volveréis a la pantalla del mazo. ¿Continuar?')) return;
+    store.del('narrador-game');
+    G = null;
+    screenDeck();
+  };
+}
+
+/** Ronda de verificación: cada jugador ve en privado su carta marcada y la confirma o la corrige. */
+function screenVerify(i, stage) {
+  setMode('day');
+  const p = G.players[i];
+  if (!p) return finishReveal();
+  if (stage === 'handoff') {
     render(`
       <section class="handoff">
-        <h2>El reparto no cuadra</h2>
-        <p>Alguien ha marcado una carta que no está en el mazo (o hay más copias de las que hay).
-        No se dice cuál para no desvelar nada.</p>
+        <p class="muted">Verificación · ${i + 1} de ${G.players.length}</p>
+        <p>Pasa el dispositivo a</p>
+        <div class="who">${esc(p.name)}</div>
+        <p class="muted small">Ten delante tu carta física, sin que nadie la vea.</p>
+        <button class="btn primary xl" data-a="go">Soy ${esc(p.name)}: continuar</button>
+      </section>`);
+    $('[data-a=go]').onclick = () => screenVerify(i, 'check');
+  } else if (stage === 'check') {
+    render(`
+      <section class="handoff">
+        <p>${esc(p.name)}, marcaste</p>
+        <div class="secret">${esc(roleName(p.role))}</div>
+        <p>Mira tu carta física con atención: ¿es exactamente esta?</p>
         <div class="row">
-          <button class="btn" data-a="redo">Repetir el reparto</button>
-          <button class="btn primary" data-a="go">Seguir igualmente</button>
+          <button class="btn" data-a="fix">No, corregir</button>
+          <button class="btn primary xl" data-a="ok">Sí, es correcta</button>
         </div>
       </section>`);
-    $('[data-a=redo]').onclick = () => screenReveal(0, 'handoff');
-    $('[data-a=go]').onclick = screenPublic;
-    return;
+    $('[data-a=ok]').onclick = () => screenVerify(i + 1, 'handoff');
+    $('[data-a=fix]').onclick = () => screenReveal(i, 'pick', null, 'verify');
   }
-  screenPublic();
 }
 
 /* =====================================================================
@@ -779,6 +858,8 @@ function screenPublic() {
   };
 
   $('[data-a=start]').onclick = () => {
+    // Antierrores: nunca se empieza con un reparto que no cuadra con el mazo.
+    if (revealProblems().length) return screenRevealError();
     // Validar edificios: no más copias de las que existen.
     if (G.opts.aldea) {
       const cnt = {};
